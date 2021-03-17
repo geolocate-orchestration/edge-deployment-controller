@@ -1,0 +1,6 @@
+apiVersion: edge.aida.io/v1
+kind: Deployment
+metadata:
+  name: deployment-sample
+spec:
+  replicas: 1

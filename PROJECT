@@ -1,0 +1,7 @@
+domain: aida.io
+repo: github.com/aida-dos/edge-controller
+resources:
+- group: edge
+  kind: Deployment
+  version: v1
+version: "2"
