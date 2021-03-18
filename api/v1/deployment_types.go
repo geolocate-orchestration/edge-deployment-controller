@@ -17,6 +17,7 @@ limitations under the License.
 package v1
 
 import (
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -28,12 +29,13 @@ type DeploymentSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// Replicas is the number of replicas that should be specified on the
-	// Deployment resource that the controller creates.
-	// If not specified, one replica will be created.
+	// Number of desired pods. This is a pointer to distinguish between explicit
+	// zero and not specified. Defaults to 1.
 	// +optional
-	// +kubebuilder:validation:Minimum=0
 	Replicas *int32 `json:"replicas,omitempty"`
+
+	// Template describes the pods that will be created.
+	Template v1.PodTemplateSpec `json:"template"`
 }
 
 // DeploymentStatus defines the observed state of Deployment

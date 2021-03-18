@@ -58,19 +58,25 @@ func (r *DeploymentReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) 
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	if err := r.cleanupOwnedResources(ctx, &edgeDeployment, id); err != nil {
-		klog.Errorln(id, err)
-		return ctrl.Result{}, err
-	}
+	return r.handleNewOrUpdate(ctx, &edgeDeployment, id)
+}
+
+func (r *DeploymentReconciler) handleNewOrUpdate(
+	ctx context.Context, edgeDeployment *edgev1.Deployment, id string) (ctrl.Result, error) {
+
+	// TODO: delete out of date deployments
+
+	// Setup edgeDeployment to use aida-scheduler
+	edgeDeployment.Spec.Template.Spec.SchedulerName = "aida-scheduler"
 
 	deployment := apps.Deployment{}
-	err := r.checkIfDeploymentExists(ctx, &edgeDeployment, &deployment, id)
+	err := r.getOrCreateDeployment(ctx, edgeDeployment, &deployment, id)
 	if err != nil {
 		klog.Errorln(id, err)
 		return ctrl.Result{}, err
 	}
 
-	updatedDeployment, err := r.syncingReplicaCount(ctx, &edgeDeployment, &deployment, id)
+	updatedDeployment, err := r.syncingReplicaCount(ctx, edgeDeployment, &deployment, id)
 	if err != nil {
 		klog.Errorln(id, err)
 		return ctrl.Result{}, err
@@ -98,7 +104,7 @@ func (r *DeploymentReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) 
 	return ctrl.Result{}, nil
 }
 
-func (r *DeploymentReconciler) checkIfDeploymentExists(
+func (r *DeploymentReconciler) getOrCreateDeployment(
 	ctx context.Context, edgeDeployment *edgev1.Deployment, deployment *apps.Deployment, id string) error {
 
 	err := r.Client.Get(ctx, client.ObjectKey{
@@ -156,31 +162,25 @@ func (r *DeploymentReconciler) syncingReplicaCount(
 }
 
 // cleanupOwnedResources will Delete any existing Deployment resources that
-// were created for the given Deployment that no longer match the
-// deployment.spec.deploymentName field.
-func (r *DeploymentReconciler) cleanupOwnedResources(
-	ctx context.Context, edgeDeployment *edgev1.Deployment, id string) error {
+// were created for the given Deployment
+func (r *DeploymentReconciler) cleanupResources(
+	ctx context.Context, edgeDeployment *edgev1.Deployment, id string) (ctrl.Result, error) {
 
 	// List all deployment resources owned by this Deployment
 	var deployments apps.DeploymentList
 	if err := r.List(
 		ctx, &deployments, client.InNamespace(edgeDeployment.Namespace),
-		client.MatchingField(deploymentOwnerKey, edgeDeployment.Name),
+		client.MatchingFields{".metadata.controller": edgeDeployment.Name},
 	); err != nil {
-		return err
+		klog.Errorln(id, err)
+		return ctrl.Result{}, err
 	}
 
 	deleted := 0
 	for _, depl := range deployments.Items {
-		if depl.Name == edgeDeployment.Name {
-			// If this deployment's name matches the one on the Deployment resource
-			// then do not delete it.
-			continue
-		}
-
 		if err := r.Client.Delete(ctx, &depl); err != nil {
 			klog.Errorln(id, err)
-			return err
+			return ctrl.Result{}, err
 		}
 
 		r.Recorder.Eventf(edgeDeployment, core.EventTypeNormal, "Deleted", "Deleted deployment %q", depl.Name)
@@ -191,7 +191,14 @@ func (r *DeploymentReconciler) cleanupOwnedResources(
 		klog.Infoln(id, "finished cleaning up old 'Deployment' resources - number_deleted:", deleted)
 	}
 
-	return nil
+	if err := r.Client.Delete(ctx, edgeDeployment); err != nil {
+		klog.Errorln(id, err)
+		return ctrl.Result{}, err
+	}
+
+	klog.Infoln(id, edgeDeployment.Name, "'Deployment' deleted")
+
+	return ctrl.Result{}, nil
 }
 
 func buildDeployment(edgeDeployment edgev1.Deployment) *apps.Deployment {
@@ -216,27 +223,16 @@ func buildDeployment(edgeDeployment edgev1.Deployment) *apps.Deployment {
 						"deployment.edge.aida.io/deployment-name": edgeDeployment.Name,
 					},
 				},
-				Spec: core.PodSpec{
-					Containers: []core.Container{
-						{
-							Name:  "nginx",
-							Image: "nginx:latest",
-						},
-					},
-				},
+				Spec: edgeDeployment.Spec.Template.Spec,
 			},
 		},
 	}
 	return &deployment
 }
 
-var (
-	deploymentOwnerKey = ".metadata.controller"
-)
-
 func (r *DeploymentReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err := mgr.GetFieldIndexer().IndexField(
-		&apps.Deployment{}, deploymentOwnerKey,
+		&apps.Deployment{}, ".metadata.controller",
 		func(rawObj runtime.Object) []string {
 			// grab the Deployment object, extract the owner...
 			depl := rawObj.(*apps.Deployment)
