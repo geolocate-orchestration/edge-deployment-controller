@@ -1,4 +1,4 @@
-module github.com/aida-dos/edge-controller
+module github.com/aida-dos/aida-controller
 
 go 1.13
 

@@ -28,8 +28,9 @@ import (
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"strings"
 
-	edgev1 "github.com/aida-dos/edge-controller/api/v1"
+	edgev1 "github.com/aida-dos/aida-controller/api/v1"
 )
 
 // DeploymentReconciler reconciles a Deployment object
@@ -114,7 +115,7 @@ func (r *DeploymentReconciler) getOrCreateDeployment(
 	if apierrors.IsNotFound(err) {
 		klog.Infoln(id, "could not find existing 'Deployment' resources, creating...")
 
-		*deployment = *buildDeployment(*edgeDeployment)
+		*deployment = *buildDeployment(edgeDeployment)
 		if err := r.Client.Create(ctx, deployment); err != nil {
 			return err
 		}
@@ -201,13 +202,41 @@ func (r *DeploymentReconciler) cleanupResources(
 	return ctrl.Result{}, nil
 }
 
-func buildDeployment(edgeDeployment edgev1.Deployment) *apps.Deployment {
+func hasAnyRequiredLocation(edgeDeployment *edgev1.Deployment) bool {
+	return len(edgeDeployment.Spec.RequiredGeographicalLocation.Continents) > 0 ||
+		len(edgeDeployment.Spec.RequiredGeographicalLocation.Countries) > 0 ||
+		len(edgeDeployment.Spec.RequiredGeographicalLocation.Cities) > 0
+}
+
+func hasAnyPreferredLocation(edgeDeployment *edgev1.Deployment) bool {
+	return len(edgeDeployment.Spec.PreferredGeographicalLocation.Continents) > 0 ||
+		len(edgeDeployment.Spec.PreferredGeographicalLocation.Countries) > 0 ||
+		len(edgeDeployment.Spec.PreferredGeographicalLocation.Cities) > 0
+}
+
+func buildDeployment(edgeDeployment *edgev1.Deployment) *apps.Deployment {
+	labels := map[string]string{
+		"deployment.edge.aida.io/deployment-name": edgeDeployment.Name,
+	}
+
+	if hasAnyRequiredLocation(edgeDeployment) {
+		labels["deployment.edge.aida.io/requiredLocation"] =
+			strings.Join(edgeDeployment.Spec.RequiredGeographicalLocation.Continents, "_") + "-" +
+				strings.Join(edgeDeployment.Spec.RequiredGeographicalLocation.Countries, "_") + "-" +
+				strings.Join(edgeDeployment.Spec.RequiredGeographicalLocation.Cities, "_")
+	} else if hasAnyPreferredLocation(edgeDeployment) {
+		labels["deployment.edge.aida.io/preferredLocation"] =
+			strings.Join(edgeDeployment.Spec.PreferredGeographicalLocation.Continents, "_") + "-" +
+				strings.Join(edgeDeployment.Spec.PreferredGeographicalLocation.Countries, "_") + "-" +
+				strings.Join(edgeDeployment.Spec.PreferredGeographicalLocation.Cities, "_")
+	}
+
 	deployment := apps.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      edgeDeployment.Name,
 			Namespace: edgeDeployment.Namespace,
 			OwnerReferences: []metav1.OwnerReference{
-				*metav1.NewControllerRef(&edgeDeployment, edgev1.GroupVersion.WithKind("Deployment")),
+				*metav1.NewControllerRef(edgeDeployment, edgev1.GroupVersion.WithKind("Deployment")),
 			},
 		},
 		Spec: apps.DeploymentSpec{
@@ -219,9 +248,7 @@ func buildDeployment(edgeDeployment edgev1.Deployment) *apps.Deployment {
 			},
 			Template: core.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{
-						"deployment.edge.aida.io/deployment-name": edgeDeployment.Name,
-					},
+					Labels: labels,
 				},
 				Spec: edgeDeployment.Spec.Template.Spec,
 			},

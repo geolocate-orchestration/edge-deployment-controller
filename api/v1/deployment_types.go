@@ -34,8 +34,28 @@ type DeploymentSpec struct {
 	// +optional
 	Replicas *int32 `json:"replicas,omitempty"`
 
+	// Pod geographical location required
+	// +optional
+	RequiredGeographicalLocation *GeographicalLocation `json:"requiredLocation"`
+
+	// Pod geographical location preferred
+	// +optional
+	PreferredGeographicalLocation *GeographicalLocation `json:"preferredLocation"`
+
 	// Template describes the pods that will be created.
 	Template v1.PodTemplateSpec `json:"template"`
+}
+
+// GeographicalLocation is the Schema for the pod geographical location settings
+type GeographicalLocation struct {
+	// +optional
+	Continents []string `json:"continents"`
+
+	// +optional
+	Countries []string `json:"countries"`
+
+	// +optional
+	Cities []string `json:"cities"`
 }
 
 // DeploymentStatus defines the observed state of Deployment

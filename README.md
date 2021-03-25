@@ -1,1 +1,1 @@
-# edge-controller
+# aida-controller

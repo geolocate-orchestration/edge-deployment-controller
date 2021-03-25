@@ -25,8 +25,8 @@ import (
 	"os"
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	edgev1 "github.com/aida-dos/edge-controller/api/v1"
-	"github.com/aida-dos/edge-controller/controllers"
+	edgev1 "github.com/aida-dos/aida-controller/api/v1"
+	"github.com/aida-dos/aida-controller/controllers"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -65,7 +65,7 @@ func main() {
 	if err = (&controllers.DeploymentReconciler{
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("edge-controller"),
+		Recorder: mgr.GetEventRecorderFor("aida-controller"),
 	}).SetupWithManager(mgr); err != nil {
 		klog.Errorln(err, "unable to create controller", "controller", "Deployment")
 		os.Exit(1)
