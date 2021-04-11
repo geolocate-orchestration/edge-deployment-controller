@@ -2,7 +2,7 @@
 # since it depends on service name and namespace that are out of this kustomize package.
 # It should be run by config/default
 resources:
-- bases/edge.aida.io_deployments.yaml
+- bases/edge.mv.io_deployments.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patchesStrategicMerge:
@@ -25,5 +25,5 @@ patchesJson6902:
       group: apiextensions.k8s.io
       version: v1beta1
       kind: CustomResourceDefinition
-      name: deployments.edge.aida.io
+      name: deployments.edge.mv.io
     path: patches/k8s_list_map_keys.yaml

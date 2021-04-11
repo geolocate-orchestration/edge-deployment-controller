@@ -20,7 +20,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	edgev1 "github.com/aida-dos/aida-controller/api/v1"
+	edgev1 "github.com/mv-orchestration/edge-deployment-controller/api/v1"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"k8s.io/client-go/kubernetes/scheme"

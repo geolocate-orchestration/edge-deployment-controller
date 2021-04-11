@@ -6,9 +6,9 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.2.5
   creationTimestamp: null
-  name: deployments.edge.aida.io
+  name: deployments.edge.mv.io
 spec:
-  group: edge.aida.io
+  group: edge.mv.io
   names:
     kind: Deployment
     listKind: DeploymentList

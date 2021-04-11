@@ -18,7 +18,6 @@ package controllers
 
 import (
 	"context"
-	"github.com/matoous/go-nanoid/v2"
 	apps "k8s.io/api/apps/v1"
 	core "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -30,7 +29,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"strings"
 
-	edgev1 "github.com/aida-dos/aida-controller/api/v1"
+	edgev1 "github.com/mv-orchestration/edge-deployment-controller/api/v1"
+	"github.com/mv-orchestration/scheduler/labels"
 )
 
 // DeploymentReconciler reconciles a Deployment object
@@ -41,50 +41,50 @@ type DeploymentReconciler struct {
 	Recorder record.EventRecorder
 }
 
-// +kubebuilder:rbac:groups=edge.aida.io,resources=deployments,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=edge.aida.io,resources=deployments/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=edge.mv.io,resources=deployments,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=edge.mv.io,resources=deployments/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;delete
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
 func (r *DeploymentReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	ctx := context.Background()
-	id, _ := gonanoid.New(5)
+	klog.Infoln("- fetching 'Deployment' resource")
+	edgeDeployment := edgev1.Deployment{
+		ObjectMeta: ctrl.ObjectMeta{
+			Name:      req.Name,
+			Namespace: req.Namespace,
+		},
+	}
 
-	klog.Infoln(id, "- fetching 'Deployment' resource")
-	edgeDeployment := edgev1.Deployment{}
 	if err := r.Client.Get(ctx, req.NamespacedName, &edgeDeployment); err != nil {
-		klog.Errorln(id, err)
-		// Ignore NotFound errors as they will be retried automatically if the
-		// resource is created in future.
+		_, _ = r.cleanupResources(ctx, &edgeDeployment)
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	return r.handleNewOrUpdate(ctx, &edgeDeployment, id)
+	return r.handleNewOrUpdate(ctx, &edgeDeployment)
 }
 
 func (r *DeploymentReconciler) handleNewOrUpdate(
-	ctx context.Context, edgeDeployment *edgev1.Deployment, id string) (ctrl.Result, error) {
+	ctx context.Context, edgeDeployment *edgev1.Deployment) (ctrl.Result, error) {
 
-	// TODO: delete out of date deployments
-
-	// Setup edgeDeployment to use aida-scheduler
-	edgeDeployment.Spec.Template.Spec.SchedulerName = "aida-scheduler"
+	// Setup edgeDeployment to use k8s-scheduler
+	edgeDeployment.Spec.Template.Spec.SchedulerName = "k8s-scheduler"
 
 	deployment := apps.Deployment{}
-	err := r.getOrCreateDeployment(ctx, edgeDeployment, &deployment, id)
+	err := r.getOrCreateDeployment(ctx, edgeDeployment, &deployment)
 	if err != nil {
-		klog.Errorln(id, err)
+		klog.Errorln(err)
 		return ctrl.Result{}, err
 	}
 
-	updatedDeployment, err := r.syncingReplicaCount(ctx, edgeDeployment, &deployment, id)
+	updatedDeployment, err := r.syncingReplicaCount(ctx, edgeDeployment, &deployment)
 	if err != nil {
-		klog.Errorln(id, err)
+		klog.Errorln(err)
 		return ctrl.Result{}, err
 	}
 
 	if updatedDeployment {
-		klog.Infoln(id, "updating 'Deployment' resource status")
+		klog.Infoln("updating 'Deployment' resource status")
 		edgeDeployment.Status.ReadyReplicas = deployment.Status.ReadyReplicas
 
 		newDeployment := apps.Deployment{}
@@ -93,27 +93,27 @@ func (r *DeploymentReconciler) handleNewOrUpdate(
 		newDeployment.Status = *deployment.Status.DeepCopy()
 
 		if err = r.Client.Status().Update(ctx, &newDeployment); err != nil {
-			klog.Errorln(id, err)
+			klog.Errorln(err)
 			return ctrl.Result{}, err
 		}
 
-		klog.Infoln(id, "resource status synced")
+		klog.Infoln("resource status synced")
 	} else {
-		klog.Infoln(id, "nothing to update, skipping")
+		klog.Infoln("nothing to update, skipping")
 	}
 
 	return ctrl.Result{}, nil
 }
 
 func (r *DeploymentReconciler) getOrCreateDeployment(
-	ctx context.Context, edgeDeployment *edgev1.Deployment, deployment *apps.Deployment, id string) error {
+	ctx context.Context, edgeDeployment *edgev1.Deployment, deployment *apps.Deployment) error {
 
 	err := r.Client.Get(ctx, client.ObjectKey{
 		Namespace: edgeDeployment.Namespace, Name: edgeDeployment.Name,
 	}, deployment)
 
 	if apierrors.IsNotFound(err) {
-		klog.Infoln(id, "could not find existing 'Deployment' resources, creating...")
+		klog.Infoln("could not find existing 'Deployment' resources, creating...")
 
 		*deployment = *buildDeployment(edgeDeployment)
 		if err := r.Client.Create(ctx, deployment); err != nil {
@@ -122,10 +122,10 @@ func (r *DeploymentReconciler) getOrCreateDeployment(
 
 		r.Recorder.Eventf(edgeDeployment, core.EventTypeNormal,
 			"Created", "Created deployment %q", deployment.Name)
-		klog.Infoln(id, "created 'Deployment' resource")
+		klog.Infoln("created 'Deployment' resource")
 		return nil
 	} else {
-		klog.Infoln(id, "existing 'Deployment' resource already exists")
+		klog.Infoln("existing 'Deployment' resource already exists")
 	}
 
 	if err != nil {
@@ -136,14 +136,14 @@ func (r *DeploymentReconciler) getOrCreateDeployment(
 }
 
 func (r *DeploymentReconciler) syncingReplicaCount(
-	ctx context.Context, edgeDeployment *edgev1.Deployment, deployment *apps.Deployment, id string) (bool, error) {
+	ctx context.Context, edgeDeployment *edgev1.Deployment, deployment *apps.Deployment) (bool, error) {
 
 	expectedReplicas := int32(1)
 	if edgeDeployment.Spec.Replicas != nil {
 		expectedReplicas = *edgeDeployment.Spec.Replicas
 	}
 	if *deployment.Spec.Replicas != expectedReplicas {
-		klog.Infoln(id, "updating replica count - old_count:", *deployment.Spec.Replicas,
+		klog.Infoln("updating replica count - old_count:", *deployment.Spec.Replicas,
 			", new_count:", expectedReplicas)
 
 		deployment.Spec.Replicas = &expectedReplicas
@@ -157,7 +157,7 @@ func (r *DeploymentReconciler) syncingReplicaCount(
 		return true, nil
 	}
 
-	klog.Infoln(id, "replica count up to date - replica_count:", *deployment.Spec.Replicas)
+	klog.Infoln("replica count up to date - replica_count:", *deployment.Spec.Replicas)
 
 	return false, nil
 }
@@ -165,39 +165,21 @@ func (r *DeploymentReconciler) syncingReplicaCount(
 // cleanupOwnedResources will Delete any existing Deployment resources that
 // were created for the given Deployment
 func (r *DeploymentReconciler) cleanupResources(
-	ctx context.Context, edgeDeployment *edgev1.Deployment, id string) (ctrl.Result, error) {
+	ctx context.Context, edgeDeployment *edgev1.Deployment) (ctrl.Result, error) {
 
-	// List all deployment resources owned by this Deployment
-	var deployments apps.DeploymentList
-	if err := r.List(
-		ctx, &deployments, client.InNamespace(edgeDeployment.Namespace),
-		client.MatchingFields{".metadata.controller": edgeDeployment.Name},
-	); err != nil {
-		klog.Errorln(id, err)
+	deployment := &apps.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      edgeDeployment.Name,
+			Namespace: edgeDeployment.Namespace,
+		},
+	}
+
+	if err := r.Client.Delete(ctx, deployment); err != nil {
+		klog.Errorln(err)
 		return ctrl.Result{}, err
 	}
 
-	deleted := 0
-	for _, depl := range deployments.Items {
-		if err := r.Client.Delete(ctx, &depl); err != nil {
-			klog.Errorln(id, err)
-			return ctrl.Result{}, err
-		}
-
-		r.Recorder.Eventf(edgeDeployment, core.EventTypeNormal, "Deleted", "Deleted deployment %q", depl.Name)
-		deleted++
-	}
-
-	if deleted != 0 {
-		klog.Infoln(id, "finished cleaning up old 'Deployment' resources - number_deleted:", deleted)
-	}
-
-	if err := r.Client.Delete(ctx, edgeDeployment); err != nil {
-		klog.Errorln(id, err)
-		return ctrl.Result{}, err
-	}
-
-	klog.Infoln(id, edgeDeployment.Name, "'Deployment' deleted")
+	klog.Infoln(deployment.Name, "'Deployment' deleted")
 
 	return ctrl.Result{}, nil
 }
@@ -215,20 +197,20 @@ func hasAnyPreferredLocation(edgeDeployment *edgev1.Deployment) bool {
 }
 
 func buildDeployment(edgeDeployment *edgev1.Deployment) *apps.Deployment {
-	labels := map[string]string{
-		"deployment.edge.aida.io/deployment-name": edgeDeployment.Name,
+	lbs := map[string]string{
+		"deployment.edge.mv.io/deployment-name": edgeDeployment.Name,
 	}
 
 	if hasAnyRequiredLocation(edgeDeployment) {
-		labels["deployment.edge.aida.io/requiredLocation"] =
-			strings.Join(edgeDeployment.Spec.RequiredGeographicalLocation.Continents, "_") + "-" +
+		lbs[labels.WorkloadRequiredLocation] =
+			strings.Join(edgeDeployment.Spec.RequiredGeographicalLocation.Cities, "_") + "-" +
 				strings.Join(edgeDeployment.Spec.RequiredGeographicalLocation.Countries, "_") + "-" +
-				strings.Join(edgeDeployment.Spec.RequiredGeographicalLocation.Cities, "_")
+				strings.Join(edgeDeployment.Spec.RequiredGeographicalLocation.Continents, "_")
 	} else if hasAnyPreferredLocation(edgeDeployment) {
-		labels["deployment.edge.aida.io/preferredLocation"] =
-			strings.Join(edgeDeployment.Spec.PreferredGeographicalLocation.Continents, "_") + "-" +
+		lbs[labels.WorkloadPreferredLocation] =
+			strings.Join(edgeDeployment.Spec.PreferredGeographicalLocation.Cities, "_") + "-" +
 				strings.Join(edgeDeployment.Spec.PreferredGeographicalLocation.Countries, "_") + "-" +
-				strings.Join(edgeDeployment.Spec.PreferredGeographicalLocation.Cities, "_")
+				strings.Join(edgeDeployment.Spec.PreferredGeographicalLocation.Continents, "_")
 	}
 
 	deployment := apps.Deployment{
@@ -243,12 +225,12 @@ func buildDeployment(edgeDeployment *edgev1.Deployment) *apps.Deployment {
 			Replicas: edgeDeployment.Spec.Replicas,
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					"deployment.edge.aida.io/deployment-name": edgeDeployment.Name,
+					"deployment.edge.mv.io/deployment-name": edgeDeployment.Name,
 				},
 			},
 			Template: core.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: labels,
+					Labels: lbs,
 				},
 				Spec: edgeDeployment.Spec.Template.Spec,
 			},

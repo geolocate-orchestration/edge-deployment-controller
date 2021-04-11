@@ -1,1 +1,1 @@
-# aida-controller
+# edge-deployment-controller

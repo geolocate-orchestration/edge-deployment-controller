@@ -1,5 +1,5 @@
-domain: aida.io
-repo: github.com/aida-dos/aida-controller
+domain: mv.io
+repo: github.com/mv-orchestration/edge-deployment-controller
 resources:
 - group: edge
   kind: Deployment

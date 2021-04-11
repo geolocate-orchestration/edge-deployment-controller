@@ -25,8 +25,8 @@ import (
 	"os"
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	edgev1 "github.com/aida-dos/aida-controller/api/v1"
-	"github.com/aida-dos/aida-controller/controllers"
+	edgev1 "github.com/mv-orchestration/edge-deployment-controller/api/v1"
+	"github.com/mv-orchestration/edge-deployment-controller/controllers"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -55,7 +55,7 @@ func main() {
 		MetricsBindAddress: metricsAddr,
 		Port:               9443,
 		LeaderElection:     enableLeaderElection,
-		LeaderElectionID:   "94fd5ed7.aida.io",
+		LeaderElectionID:   "94fd5ed7.mv.io",
 	})
 	if err != nil {
 		klog.Errorln(err, "unable to start manager")
@@ -65,7 +65,7 @@ func main() {
 	if err = (&controllers.DeploymentReconciler{
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("aida-controller"),
+		Recorder: mgr.GetEventRecorderFor("edge-deployment-controller"),
 	}).SetupWithManager(mgr); err != nil {
 		klog.Errorln(err, "unable to create controller", "controller", "Deployment")
 		os.Exit(1)
